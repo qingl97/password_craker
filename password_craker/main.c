@@ -22,7 +22,7 @@ int getCharIndex(char* alphabet, char* chr){
   	return i+1;
 }
 
-int getStrLen(unsigned long long int n, int alphab_len){
+int getStrLen(unsigned long long n, int alphab_len){
   	int i = 0, rem;
   	while(n>0){
     	++i;
@@ -34,19 +34,19 @@ int getStrLen(unsigned long long int n, int alphab_len){
   	return i+1; // append '0' to the end of string
 }
 
-unsigned long long int str2int(char* str, char* alphabet, int alphab_len){
+unsigned long long str2int(char* str, char* alphabet, int alphab_len){
   	int i = strlen(str);
   	int tmp = i;
-  	unsigned long long int sum = 0;
+  	unsigned long long sum = 0;
   	while(i>0){
     	sum += getCharIndex(alphabet, &str[i-1]) * 
-      			(unsigned long long int)pow((double)alphab_len, (double)(tmp-i));
+      			(unsigned long long)pow((double)alphab_len, (double)(tmp-i));
     	--i;
   	}
   	return sum;
 }
 
-void int2str(unsigned long long int n, char* chr, char* alphabet, int alphab_len){
+void int2str(unsigned long long n, char* chr, char* alphabet, int alphab_len){
 	int len = getStrLen(n, alphab_len);
 	int rem;
 	int i=len-2;;
@@ -62,32 +62,30 @@ void int2str(unsigned long long int n, char* chr, char* alphabet, int alphab_len
 
 void usage(){
   	printf("Run the program in this format:\n");
-  	printf("./craker num_threadsPerProc PathToFileContainsAlphabet maxLengthToTest password\n");
+  	printf("mpirun -np numberOfProcs ./craker num_threadsPerProc PathToFileContainsAlphabet maxLengthToTest password\n");
 }
 
 int main(int argc, char** argv){
 	if(argc != 5){
-	usage();
+		usage();
 		return EXIT_FAILURE;
 	}
 
 	/*----------------- Commmon variables ----------------*/
-	int num_procs;
-	int num_threadsPerProc;
 	char* alphabet;
 	int alphabet_len;
 	int max_len_test;
-	int pw_len;
 	char* pw;
+	int num_threadsPerProc;
 
 	/*--------------- Initialize variables --------------*/
 	num_threadsPerProc = atoi(argv[1]);
 	max_len_test = atoi(argv[3]);
 	pw = argv[4]; /* memory is allocated already! share by all the processus */
-	pw_len = strlen(pw);
 	alphabet = (char*)malloc(MAX_ALPHABET_LENGTH * sizeof(char)); 
 
 	int rank;
+	int num_procs;
 	MPI_Init (&argc, &argv);
 	MPI_Comm_rank (MPI_COMM_WORLD, &rank);
 	MPI_Comm_size (MPI_COMM_WORLD, &num_procs);
@@ -124,8 +122,7 @@ int main(int argc, char** argv){
 	// The Once the characters in the alphabet list is fixed, the order of characters in the list is 
 	// the fixed, as the order in the file alphabet.list by default.
 
-	if(rank == 0){                                               
-		printf("password length:= %d\n", pw_len);
+	if(rank == 0){           
 		printf("alphabet_len:= %d\n", alphabet_len);
 
 		MPI_Status status;
@@ -134,9 +131,9 @@ int main(int argc, char** argv){
 		int flag = 0;
 		int isComplete = 0;
 		int moreInterval = 1;
-		unsigned long long int num_AllPerms, start, num_perms;
+		unsigned long long num_AllPerms, start, num_perms;
 
-		num_AllPerms = (unsigned long long int)pow((double)alphabet_len, (double)max_len_test);
+		num_AllPerms = (unsigned long long)pow((double)alphabet_len, (double)max_len_test);
 		start = 1;
 		num_perms = INTERVAL_LENGTH;
 		printf("Total number of password permutations to test:= %llu\n", num_AllPerms);
@@ -148,7 +145,7 @@ int main(int argc, char** argv){
 		  // if arrived, means the password is found succussfully! Then terminate all processes
 			MPI_Iprobe(MPI_ANY_SOURCE, TAG_PASSWORD, MPI_COMM_WORLD, &flag_pw, &status);
 			if(flag_pw){
-				unsigned long long int val_pw, tmp;
+				unsigned long long val_pw, tmp;
 				MPI_Recv(&val_pw, 1, MPI_UNSIGNED_LONG_LONG, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
 				int pw_length = getStrLen(val_pw, alphabet_len);
 				char* str_pw = malloc(pw_length * sizeof(char));
@@ -172,7 +169,7 @@ int main(int argc, char** argv){
 						}
 						MPI_Send(&start, 1, MPI_UNSIGNED_LONG_LONG, status.MPI_SOURCE, TAG_START_PERMUTATION, MPI_COMM_WORLD);
 						MPI_Send(&num_perms, 1, MPI_UNSIGNED_LONG_LONG, status.MPI_SOURCE, TAG_NUM_PERMUTATIONS, MPI_COMM_WORLD);
-						printf("Master send interval begins at [%llu], ends at [%llu] to slave [%d]\n", start, start+num_perms-1, status.MPI_SOURCE);
+						//printf("Master send interval begins at [%llu], ends at [%llu] to slave [%d]\n", start, start+num_perms-1, status.MPI_SOURCE);
 						// update the start point for the next interval, if no more intervals, then do nothing
 						if(moreInterval)
 			  				start += num_perms; 
@@ -192,7 +189,7 @@ int main(int argc, char** argv){
 
 	if(rank != 0){ // slave
 		printf("begin slave [%d]\n", rank);
-		unsigned long long int start, num_perms;
+		unsigned long long start, num_perms;
 		int wantInterval = 1;
 		MPI_Status status;
 		MPI_Request req;
@@ -200,7 +197,7 @@ int main(int argc, char** argv){
 		int moreInterval = 1;
 		int flag = 0;
 		int flag_no_interval = 0;
-		unsigned long long int count = 0;
+		unsigned long long count = 0;
 
 		while(!isDone){   /* Main loop */
 		  	// request interval from master
@@ -217,7 +214,7 @@ int main(int argc, char** argv){
 					MPI_Recv(&num_perms, 1, MPI_UNSIGNED_LONG_LONG, 0, TAG_NUM_PERMUTATIONS, MPI_COMM_WORLD, &status);
 					//printf("[slave %d] received start:=[%llu]\tnum_perms:=[%llu]\n", rank, start, num_perms);
 
-					unsigned long long int i, tmp;
+					unsigned long long i, tmp;
 
 					for(i=start; i<start+num_perms; i++){
 						count++;
