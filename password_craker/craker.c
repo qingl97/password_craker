@@ -11,37 +11,7 @@
 #define TAG_START_PERMUTATION 2
 #define TAG_NUM_PERMUTATIONS  3
 #define TAG_INTERVAL          4
-
-typedef struct{
-  char* str;
-  int len;
-}Permutation;
-
-typedef struct{
-  unsigned long long int start;
-  unsigned long long int end;
-}Interval;
-
-void usage(){
-  printf("Run the program in this format:\n");
-  printf("./craker num_threadsPerProc PathToFileContainsAlphabet maxLengthToTest password\n");
-}
-
-void int2Permutation(unsigned long long int n, char* chr, char* alpha, int alpha_len){
-  int i = 0;
-  unsigned long long int rem, tmp;
-  i = 0;
-  while(n!=0){
-    rem = n%alpha_len;
-    if(rem)
-      chr[i] = alpha[rem-1];
-    else
-      chr[i] = alpha[alpha_len-1];
-    ++i;
-    n /= alpha_len;
-  }
-  chr[i] = '\0';
-}
+#define TAG_NO_MORE_INTERVAL  5
 
 // void permutationIncrementOne(Permutation* perm, char* alpha, int alpha_len){
 //   int i, more = 0;
@@ -66,6 +36,48 @@ void int2Permutation(unsigned long long int n, char* chr, char* alpha, int alpha
 //     //TODO
 //   }
 // }
+
+typedef struct{
+  char* str;
+  int len;
+}Permutation;
+
+typedef struct{
+  unsigned long long int start;
+  unsigned long long int end;
+}Interval;
+
+void usage(){
+  printf("Run the program in this format:\n");
+  printf("./craker num_threadsPerProc PathToFileContainsAlphabet maxLengthToTest password\n");
+}
+
+int getStrLen(unsigned long long int n){
+  int i = 0; 
+  while(n>0){
+    ++i;
+    n /= alpha_len - 1;
+  }
+  return i+1; // append '0' to the end of string
+}
+
+void int2Permutation(unsigned long long int n, char* chr, char* alpha, int alpha_len){
+  int i = 0;
+  unsigned long long int rem, tmp;
+  tmp = n;
+  while(n>0){
+    ++i;
+    n /= alpha_len - 1;
+  }
+  n = tmp;
+  while(n>0){
+    rem = n%alpha_len;
+    chr[i] = alpha[(rem+alpha_len-1)%alpha_len];
+    ++i;
+    n /= alpha_len - 1;
+  }
+  chr[i] = '\0';
+}
 
 // index of each char in the alphabet starts from 1 to the N
 // N is the lenth of the alphabet
@@ -155,64 +167,62 @@ int main(int argc, char** argv){
 
   if(rank == 0){ // master
     printf("password length:= %d\n", pw_len);
-    printf("%llu\n", val_pw);
-
-    int find = 0;
-    int num_permsPerItval = 100;    // number of permuations distributed to each slave process
-
-    unsigned long long int num_AllPerms, start, num_perms;
-  
-    num_AllPerms = (unsigned long long int)pow((double)alphabet_len, (double)max_len_test);
-    start = 1;
-    num_perms = num_permsPerItval;
+    printf("password value:= %llu\n", val_pw);
+    printf("alphabet_len:= %d\n", alphabet_len);
 
     MPI_Status status;
     MPI_Request req;
     int flag = 0;
     int isComplete = 0;
-    // if not find, continue working
-
+    int moreInterval = 1;
+    int num_permsPerItval = 100;    // number of permuations distributed to each slave process
+    unsigned long long int num_AllPerms, start, num_perms;
+  
+    num_AllPerms = (unsigned long long int)pow((double)alphabet_len, (double)max_len_test);
+    start = 1;
+    num_perms = num_permsPerItval;
     printf("Total number of perms to try:= %llu\n", num_AllPerms);
-    //while(1){
-      MPI_Irecv(&find, 1, MPI_INT, MPI_ANY_SOURCE, TAG_PASSWORD_FOUND, MPI_COMM_WORLD, &req);
-      if(find)
+
+    /* MAIN LOOP */
+    while(!isComplete){
+      // MPI_Irecv(&find, 1, MPI_INT, MPI_ANY_SOURCE, TAG_PASSWORD_FOUND, MPI_COMM_WORLD, &req);
+      // non-blocking check if the message of TAG_PASSWORD has arrived or not
+      // if arrived, means the password is found succussfully! Then terminate all processes
+      MPI_Iprobe(MPI_ANY_SOURCE, TAG_PASSWORD, MPI_COMM_WORLD, &flag, &status);
+      if(flag){
+        unsigned long long int val_pw_found, tmp;
+        MPI_Recv(&val_pw_found, 1, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+        int j = 0;
+        tmp = val_pw_found;
+        while(tmp!=0){
+          j++;  tmp /= alphabet_len;
+          if(tmp<=alphabet_len) break;
+        }
+        char str_pw[j+1];
+        int2Permutation(val_pw_found, str_pw, alphabet, alphabet_len);
+        printf("*************************************** PASSWORD is [%s]\n", str_pw);
         MPI_Abort(MPI_COMM_WORLD, 2); 
-      else{ // not find yet, continue respond to slave's request for intervals
-        //while(!flag){
+      }
+      else{ 
+          // respond to slaves' requests for intervals
           MPI_Iprobe(MPI_ANY_SOURCE, TAG_INTERVAL, MPI_COMM_WORLD, &flag, &status);
-        
-        //}
-          while(flag){
+
+          if(flag && moreInterval){
             if(start + num_permsPerItval > num_AllPerms){
               num_perms = num_AllPerms - start + 1;
-              isComplete = 1;
+              moreInterval = 0;
             }
             MPI_Send(&start, 1, MPI_UNSIGNED_LONG_LONG, status.MPI_SOURCE, TAG_START_PERMUTATION, MPI_COMM_WORLD);
             MPI_Send(&num_perms, 1, MPI_UNSIGNED_LONG_LONG, status.MPI_SOURCE, TAG_NUM_PERMUTATIONS, MPI_COMM_WORLD);
-            if(!isComplete)
-              start += num_perms;
-            else
-              break;
+            // update the start point for the next interval, if no more intervals, then do nothing
+            if(moreInterval)
+              start += num_perms; 
+            else{ // the last interval is distributed, wait for it's receiver 
+              //MPI_Send(&)
+            }
           }
-        // int i;
-        // for(i=1; i<num_procs; i++){
-        //   if(start + num_permsPerItval > num_AllPerms){
-        //     num_perms = num_AllPerms - start + 1;
-        //     isComplete = 1;
-        //   }
-        //   MPI_Send(&start, 1, MPI_UNSIGNED_LONG_LONG, i, START_PERMUTATION, MPI_COMM_WORLD);
-        //   MPI_Send(&num_perms, 1, MPI_UNSIGNED_LONG_LONG, i, NUM_PERMUTATIONS, MPI_COMM_WORLD);
-        //   MPI_Iprobe(...)
-        //   if()// Tester que la communication est arrive
-        //     MPI_Recv(...)// Reception d'une demande de travail
-        //     MPI_Send(...)// Envoie d'un interval si possible
-        //   // should update the start and end
-        //   if(!isComplete)
-        //     start += num_perms;
-        //   else
-        //     break;
         }
-      //}
+      }
     }
   
   else{ // slave
@@ -221,36 +231,51 @@ int main(int argc, char** argv){
     int wantInterval = 1;
     MPI_Status status;
     MPI_Request req;
-    int find = 0;
+    int isDone = 0;
+    int moreInterval = 1;
+    int flag = 0;
+    unsigned long long int count = 0;
 
-    while(!find){   /* Main loop */
+    while(!isDone){   /* Main loop */
       // request interval from master
-      MPI_Send(&wantInterval, 1, MPI_INT, 0, TAG_INTERVAL, MPI_COMM_WORLD);
-      MPI_Recv(&start, 1, MPI_UNSIGNED_LONG_LONG, 0, TAG_START_PERMUTATION, MPI_COMM_WORLD, &status);
-      MPI_Recv(&num_perms, 1, MPI_UNSIGNED_LONG_LONG, 0, TAG_NUM_PERMUTATIONS, MPI_COMM_WORLD, &status);
-      printf("[slave %d] received start:=[%llu]\tnum_perms:=[%llu]\n", rank, start, num_perms);
+      MPI_Iprobe(0, TAG_NO_MORE_INTERVAL, MPI_COMM_WORLD, &flag, &status);
+      if(!flag){
+        MPI_Isend(&wantInterval, 1, MPI_INT, 0, TAG_INTERVAL, MPI_COMM_WORLD, &req);
+        //MPI_Iprobe(0, TAG_START_PERMUTATION, &flag, &status);
+        MPI_Iprobe(0, TAG_NUM_PERMUTATIONS, MPI_COMM_WORLD, &flag, &status);
+        if(flag){
+          MPI_Recv(&start, 1, MPI_UNSIGNED_LONG_LONG, 0, TAG_START_PERMUTATION, MPI_COMM_WORLD, &status);
+          MPI_Recv(&num_perms, 1, MPI_UNSIGNED_LONG_LONG, 0, TAG_NUM_PERMUTATIONS, MPI_COMM_WORLD, &status);
+          printf("[slave %d] received start:=[%llu]\tnum_perms:=[%llu]\n", rank, start, num_perms);
 
-      /* Search in the interval of start to end */
-      //#pragma omp parallel 
-      unsigned long long int i, tmp;
+          /* Search in the interval of start to end */
+          //#pragma omp parallel 
+          unsigned long long int i, tmp;
 
-      for(i=start; i<=start+num_perms; i++){
-        int j = 0;
-        tmp = i;
-        while(i!=0){
-          j++;  i /= alphabet_len;
-        }
-        i = tmp;
-        char str_perm[j+1];
-        int2Permutation(i, str_perm, alphabet, alphabet_len);
-        printf("----------------------------------------------try [%s], length:= %lu\n", str_perm, strlen(str_perm));
+          for(i=start; i<start+num_perms; i++){
+            count++;
+            int j = 0, rem;
+            tmp = i;
+            while(i!=0){
+              j++;  
+              rem = i%alphabet_len;
+              i /= alphabet_len;
 
-        if(strcmp(str_perm, pw) == 0){
-          find = 1; // password find!
-          printf("*****************  SUCCESS!!! password is %s\n", str_perm);
-          MPI_Send(&i, 1, MPI_UNSIGNED_LONG_LONG, 0, TAG_PASSWORD, MPI_COMM_WORLD); // send pw
-          MPI_Isend(&find, 1, MPI_INT, 0, TAG_PASSWORD_FOUND, MPI_COMM_WORLD, &req); // send signal
-          break;
+              if(tmp<=alphabet_len) break;
+            }
+            i = tmp;
+            char str_perm[j+1];
+            int2Permutation(i, str_perm, alphabet, alphabet_len);
+            printf("----------------------------------------------try [%s, %llu], length:= %lu\n", str_perm, i, strlen(str_perm));
+
+            if(strcmp(str_perm, pw) == 0){
+              isDone = 1; // password find!
+              printf("*****************  SUCCESS!!! password is %s\n", str_perm);
+              MPI_Send(&i, 1, MPI_UNSIGNED_LONG_LONG, 0, TAG_PASSWORD, MPI_COMM_WORLD); // send pw
+              //MPI_Isend(&find, 1, MPI_INT, 0, TAG_PASSWORD_FOUND, MPI_COMM_WORLD, &req); // send signal
+              break;
+            }
+          }
         }
       }
     }
