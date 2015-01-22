@@ -11,6 +11,7 @@
 #define TAG_INTERVAL_REQUEST  2
 #define TAG_KILL_SELF         3
 #define TAG_NO_MORE_INTERVAL  4
+#define TAG_PWD_NOT_FOUND     5
 
 typedef struct {
     unsigned long long start;

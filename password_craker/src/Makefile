@@ -1,17 +1,17 @@
 CFLAG= -g -Wall -Wextra  
-ARGS=./passCrack -m "zzz" -a 26 -r 5 -t 3 -p 2
+ARGS=./craker letters 5 10 6 KPMG
 
 all: compile run 
 
-compile: macro.h passCrack.c slave.c convert.c convert.h string_util.h
-	mpicc passCrack.c convert.c string_util.c mpi_util.c -o passCrack $(CFLAG)
-	mpicc slave.c convert.c mpi_util.c string_util.c -o  slave -fopenmp -pthread -g $(CFLAG) 
+compile: mpi_utils.h master.c slave.c wordHandler.h
+	mpicc master.c wordHandler.c -o craker $(CFLAG)
+	mpicc slave.c wordHandler.c -o slave -fopenmp -g $(CFLAG) 
 
 valgrind:
-	mpiexec -np 1 valgrind $(ARGS)
+	mpirun -np 1 valgrind $(ARGS)
 
 run:
-	mpiexec -np 1 $(ARGS)
+	mpirun -np 1 $(ARGS)
 
 clean: 
-	rm slave passCrack
+	rm slave craker
