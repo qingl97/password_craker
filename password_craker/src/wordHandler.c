@@ -44,4 +44,6 @@ void int2str(unsigned long long n, char* chr, char* alphabet, int alphab_len){
         n = (n - rem)/alphab_len;
         i--;
     }
+    chr[len-1] = '\0';
 }
+

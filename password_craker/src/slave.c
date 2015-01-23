@@ -10,12 +10,12 @@
 #include "wordHandler.h"
 #include "mpi_utils.h"
 
-#define TASK_SIZE	100
+#define TASK_SIZE	1000
 
-typedef struct {
+typedef struct Task {
 	unsigned long long start;
 	unsigned long long end;
-	Task* next;
+	struct Task* next;
 } Task;
 
 char* alphabet;
@@ -25,10 +25,12 @@ int num_threads_finished;
 unsigned long long num_perms_per_thead;
 unsigned long long pwd_found;
 Task* listHeader, *listTail;
-unsigned long long num_tasks;
-int isFound, terminate;
-int k;
-// sem_t computers;
+unsigned long long num_tasks_left;
+int isFound, terminateComm, stopSearching;
+int k, rank;
+char* pw;
+sem_t computers;
+int requested;
 
 // allocate memory for every task in the list
 void updateTaskList(Interval* itv){
@@ -36,10 +38,10 @@ void updateTaskList(Interval* itv){
 	start = itv->start;
 	end = itv->start + itv->num_perms - 1;
 	while(start){
-		++num_tasks;
+		++num_tasks_left;
 		Task* slice = malloc(sizeof(Task));
 		slice->start = start;
-		if(start+TASK_SIZE+1 > end){ // the last slice
+		if(start+TASK_SIZE-1 > end){ // the last slice
 			slice->end = end;
 			start = 0;
 		}
@@ -57,13 +59,22 @@ void updateTaskList(Interval* itv){
 			listTail = slice;
 		}
 	}
+        //        fprintf(stderr, "[SLAVE %d]: slices UPDATED left to search = %llu\n", rank, num_tasks_left);
 }	
 
 Task* nextTask(){
 	Task* ret;
 	ret = listHeader;
-	if(listHeader != NULL)
+	if(listHeader != NULL){
+                Task* tmp = listHeader;
 		listHeader = listHeader->next;
+                free(tmp);
+                --num_tasks_left;
+        }
+        else{
+                //   fprintf(stderr, "[SLAVE %d]: NO MORE TASK_SLICE !!!\n", rank);
+        }
+        //  fprintf(stderr, "[SLAVE %d]: slices CONSUMED left to search = %llu\n", rank, num_tasks_left);
 	return ret;
 }
 
@@ -77,125 +88,156 @@ void clearTaskList(){
 
 // thread responsible for communicating with the slave threads and the parent process
 void thread_comm(MPI_Comm inter){
-	int isOver = 0;
 	int hasInterval = 1;
-	int responded, reqSent;
-	listHeader = listTail = NULL;
+	//int responded, reqSent;
+      	
+
 	MPI_Datatype mpi_type_interval;
-    createMPIDatatype_Interval(&mpi_type_interval);
+	createMPIDatatype_Interval(&mpi_type_interval);
+  
+	MPI_Status status;
+	MPI_Request req;
+	int flag;
 
-    MPI_Status status;
-    MPI_Request req;
-    // begin by sending a request for interval
-    MPI_Send(0, 0, MPI_INT, 0, TAG_INTERVAL_REQUEST, inter);
-    reqSent = 1;
-    responded = 0;
-
-	while(!isOver){
+	while(!terminateComm){
 		Interval task;
-        MPI_Iprobe(0, MPI_ANY_TAG, inter, &flag, &status);
-        if(flag){
-        	switch(status.MPI_TAG){
-        		case TAG_INTERVAL: // an interval arrived
-        		responded = 1;
-        		reqSent = 0;
-                MPI_Recv(&task, 1, mpi_type_interval, 0, TAG_INTERVAL, inter, &status);
-            	#pragma omp critical 
-            	{
-            		updateTaskList(&task);
-            		//sem_post(&computers);
-            	}
-                break;
-
-                case TAG_NO_MORE_INTERVAL:
-                reqSent = 0;
-                responded = 1;
-                hasInterval = 0;
-                break;
-
-                // only when pwd is found or // all tasks finished without finding pwd
-                case TAG_KILL_SELF:
-                isOver = 1;
-                terminate = 1;
-                break;
-        	}
-        }
-        else{
-        	if(isFound){ // password found
-        		MPI_Send(&pwd_found, 1, MPI_UNSIGNED_LONG_LONG, 0, TAG_PASSWORD, inter);
-
-        		//return;
-        	}
-        	else if(num_threads_finished == num_threads_slave){ // all threads didn't find the password
-        		MPI_Send(0, 0, MPI_INT, 0, TAG_PWD_NOT_FOUND, inter);
-        		//for(k = 0; k<num_threads_slave; ++k)
+                MPI_Iprobe(0, MPI_ANY_TAG, inter, &flag, &status);
+                if(flag){
+                        switch(status.MPI_TAG){
+                        case TAG_INTERVAL: // an interval arrived
+                                // responded = 1;
+                                // reqSent = 0;
+                                MPI_Recv(&task, 1, mpi_type_interval, 0, TAG_INTERVAL, inter, &status);
+                                //   fprintf(stderr, "[SLAVE %d] received interval [%llu - %llu] from Master ----------\n", rank, task.start, task.start+task.num_perms-1);
+#pragma omp critical 
+                                {
+                                        updateTaskList(&task);
+                                }
+                                break;
+                                
+                        case TAG_NO_MORE_INTERVAL:
+                                // fprintf(stderr, "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~Master said NO_MORE_INTERVAL~~~~~~~~~~~~~~~~~~~~~\n");
+                                MPI_Recv(0,0,MPI_INT, 0, TAG_NO_MORE_INTERVAL,inter, &status);
+                                //reqSent = 0;
+                                // responded = 1;
+                                hasInterval = 0;
+                                break;
+                                
+                                // other process found password
+                        case TAG_KILL_SELF:
+                                MPI_Recv(0,0,MPI_INT, 0, TAG_KILL_SELF,inter, &status);
+                                //  fprintf(stderr, "[SLAVE %d] Other process has found password______________\n", rank);
+                                //isFound = 1;// by other process
+                                stopSearching = 1;
+                                terminateComm = 1;
+                                break;
+                        }
+                }
+                else{
+                        if(isFound){ // one thread of this process found password
+                                MPI_Send(&pwd_found, 1, MPI_UNSIGNED_LONG_LONG, 0, TAG_PASSWORD, inter);
+                                //  fprintf(stderr, "[SLAVE %d] found PWD!!! Send to Master________________\n", rank);
+                                //MPI_Send()
+                                // terminateComm = 1;
+                                //return;
+                        }
+                        else if(num_threads_finished == num_threads_slave){ // all threads didn't find the password
+                                // fprintf(stderr, "[SLAVE %d] finished not finding _________________\n", rank);
+                                MPI_Send(0, 0, MPI_INT, 0, TAG_PWD_NOT_FOUND, inter);
+                                //for(k = 0; k<num_threads_slave; ++k)
 				//	sem_post(&computers);
-        		//return;
-        	}
-        	else if(num_tasks < num_threads_slave && hasInterval && responded == 0 && reqSent == 0){ // tasks not sufficient, ask for a new interval
-        		MPI_Send(0, 0, MPI_INT, 0, TAG_INTERVAL_REQUEST, inter);
-        		reqSent = 1;
-        	}
+                                terminateComm = 1;
+                                
+                                //return;
+                        }
+                        else if(num_tasks_left < num_threads_slave && hasInterval){ // tasks not sufficient, ask for a new interval
+                                // fprintf(stderr, "[SLAVE %d] requesting interval_________________\n", rank);
+                                MPI_Send(0, 0, MPI_INT, 0, TAG_INTERVAL_REQUEST, inter);
+                                //reqSent = 1;
+                                //responded = 0;
+                        }
+                }
         }
-	}
 }
 
 // thread responsible for searching the password
 void thread_slave(){
 	unsigned long long i, start, end;
-
-	while(1){
+	
+	while(!stopSearching){
 		Task* slice;
-		// sem_wait(&computers);
+
 		#pragma omp critical
 		{
 			slice = nextTask();
 		}
-
+                
 		if(slice != NULL){ // task available
 			for(i=slice->start; i<=slice->end; i++){
-				if(terminate)
+				if(isFound || stopSearching){ // found by other thread of this process
+                                        //					fprintf(stderr, "[SLAVE %d]: PWD found by other thread or other slave\n", rank);
+                                        return;
+                                }
+				int len = getStrLen(i, alphabet_len);
+				char* str_perm = malloc(len*sizeof(char));
+				int2str(i, str_perm, alphabet, alphabet_len);
+                                //                                fprintf(stderr, "slave[%d] try [%s, %llu], length:= %lu\n", rank,str_perm, str2int(str_perm, alphabet, alphabet_len), strlen(str_perm));
+				if(strcmp(str_perm, pw) == 0){
+					fprintf(stderr, "[SLAVE %d] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~PASSWORD FOUND~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n", rank);
+					isFound = 1; // password find!
+					pwd_found = i; // write to this global variable, since only one password is possible, no need to protect its write
+					free(str_perm);
+					stopSearching = 1;
 					return;
-                int len = getStrLen(i, alphabet_len);
-                char* str_perm = malloc(len*sizeof(char));
-                int2str(i, str_perm, alphabet, alphabet_len);
-                //printf("slave[%d] try [%s, %llu], length:= %lu\n", rank,str_perm, str2int(str_perm, alphabet, alphabet_len), strlen(str_perm));
-                if(strcmp(str_perm, pw) == 0){
-                    isFound = 1; // password find!
-                    pwd_found = i; // write to this global variable, since only one password is possible, no need to protect its write
-                    free(str_perm);
-                    return;
-                }
-                free(str_perm);
-            }
+				}
+				free(str_perm);
+			}
 		}
-		else{ // no slice available, means this thread doesn't find the password, so terminates
+		else { // no slice available, means this thread doesn't find the password, so terminates
 			++num_threads_finished;
+			//stopSearching = 1;
+                        //	fprintf(stderr, "[SLAVE %d] one thread finished\n", rank);
 			return;
-		}	
+		}
 	}
 }
 
+
+
 int main(int argc, char** argv){
-
-	alphabet = malloc(MAX_ALPHABET_LENGTH * sizeof(char)); 
-	num_threads_slave = argv[1]
-	isFound = 0;
-	terminate = 0;
-	num_threads_finished = 0;
-
-	/* MPI Initialization */
-    int rank;
-    int num_procs;
+    int provided;
     MPI_Comm inter;
+    
+    alphabet = malloc(MAX_ALPHABET_LENGTH * sizeof(char)); 
+    num_threads_slave = atoi(argv[3]);
+    pw = argv[5];
 
-    MPI_Init (&argc, &argv);
-    MPI_Comm_get_parent(&inter); // get intercommunicator
-    MPI_Comm_rank (inter, &rank);
-    MPI_Comm_size (inter, &num_procs);
+    isFound = 0;
+    terminateComm = 0;
+    stopSearching = 0;
+    num_threads_finished = 0;
+    num_tasks_left = 0;
+
+    /* MPI Init */
+    MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
+    // MPI_Init(&argc, &argv);
+    MPI_Comm_get_parent(&inter);
+    MPI_Comm_rank(inter, &rank);
+    //fprintf(stderr, "[SLAVE %d] starts______________________\n", rank);
     
     MPI_Bcast(&alphabet_len, 1, MPI_INT, 0, inter);
     MPI_Bcast(alphabet, alphabet_len, MPI_CHAR, 0, inter);
+   
+    /* Initialize task list */
+    listHeader = listTail = NULL;
+    Interval task;
+    MPI_Datatype mpi_type_interval;
+    MPI_Status status;
+    createMPIDatatype_Interval(&mpi_type_interval);
+    MPI_Send(0, 0, MPI_INT, 0, TAG_INTERVAL_REQUEST, inter);
+    MPI_Recv(&task, 1, mpi_type_interval, 0, TAG_INTERVAL, inter, &status);
+    //    fprintf(stderr, "[SLAVE %d] received an interval [%llu - %llu] \n", rank, task.start, task.start+task.num_perms-1);
+    updateTaskList(&task);
 
     /* parallel section */
     int id; 
@@ -210,8 +252,10 @@ int main(int argc, char** argv){
 	}
 
 	//sem_destroy(&computers);
+        
 	MPI_Finalize();
 	free(alphabet);
 	clearTaskList();
+	fprintf(stderr, "[SLAVE %d]: exit************************ \n", rank);
 	return EXIT_SUCCESS;
 }

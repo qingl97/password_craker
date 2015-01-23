@@ -1,5 +1,5 @@
-#ifndef __WORDHANDLER__
-#define __WORDHANDLER__
+#ifndef WORDHANDLER_H
+#define WORDHANDLER_H
 
 #include <stdlib.h>
 #include <stdio.h>
