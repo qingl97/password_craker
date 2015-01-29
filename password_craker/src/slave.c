@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stddef.h>
 #include <semaphore.h>
+#include <omp.h>
 #include "mpi.h"
 
 #include "wordHandler.h"
@@ -68,7 +69,7 @@ Task* nextTask(){
 	if(listHeader != NULL){
                 Task* tmp = listHeader;
 		listHeader = listHeader->next;
-                free(tmp);
+                //free(tmp);
                 --num_tasks_left;
         }
         else{
@@ -85,7 +86,6 @@ void clearTaskList(){
 		free(tmp);
 	}
 }
-
 // thread responsible for communicating with the slave threads and the parent process
 void thread_comm(MPI_Comm inter){
 	int hasInterval = 1;
@@ -162,7 +162,7 @@ void thread_comm(MPI_Comm inter){
 
 // thread responsible for searching the password
 void thread_slave(){
-	unsigned long long i, start, end;
+	unsigned long long i;
 	
 	while(!stopSearching){
 		Task* slice;
@@ -187,11 +187,13 @@ void thread_slave(){
 					isFound = 1; // password find!
 					pwd_found = i; // write to this global variable, since only one password is possible, no need to protect its write
 					free(str_perm);
+					free(slice);
 					stopSearching = 1;
 					return;
 				}
 				free(str_perm);
 			}
+			free(slice);
 		}
 		else { // no slice available, means this thread doesn't find the password, so terminates
 			++num_threads_finished;

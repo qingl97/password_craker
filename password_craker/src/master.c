@@ -5,13 +5,12 @@
 #include <string.h>
 #include <stddef.h>
 #include "mpi.h"
-
 #include "wordHandler.h"
 #include "mpi_utils.h"
 
-#define ANSI_COLOR_RED     "\x1b[31m"
-#define ANSI_COLOR_GREEN   "\x1b[32m"
-#define ANSI_COLOR_RESET   "\x1b[0m"
+#define ANSI_COLOR_RED     \x1b[31m
+#define ANSI_COLOR_GREEN   \x1b[32m
+#define ANSI_COLOR_RESET   \x1b[0m
 
 /* Commmon variables */
 char* alphabet;
@@ -91,30 +90,27 @@ int main(int argc, char** argv){
     /* Master sends the alphabet information to slaves */
     MPI_Bcast(&alphabet_len, 1, MPI_INT, MPI_ROOT, inter);
     MPI_Bcast(alphabet, alphabet_len, MPI_CHAR, MPI_ROOT, inter);
-   
     
     MPI_Status status;
-    MPI_Request req;
     MPI_Datatype mpi_type_interval;
     createMPIDatatype_Interval(&mpi_type_interval);
-    
+
     /*--------------------- Master MAIN LOOP --------------------*/
     while(!stopComm){ 
             int flag;
             MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, inter, &flag, &status);
             if(flag){
-                    switch(status.MPI_TAG){
-                    case TAG_PASSWORD: // password found, message from slave
-                            MPI_Recv(&val_pw, 1, MPI_UNSIGNED_LONG_LONG, status.MPI_SOURCE, TAG_PASSWORD, inter, &status);
-                            printf("[MASTER] Slave [%d] has found the PASSWORD [%llu]!!! \n", status.MPI_SOURCE, val_pw);
-                            for(i=0; i<num_procs-1; i++){
-                                    //if(i!=status.MPI_SOURCE)
-                                            MPI_Send(0,0, MPI_INT, i, TAG_KILL_SELF, inter);
-                            }
-                            stopComm = 1; isFound = 1;
-                            break;
-                            
-                    case TAG_PWD_NOT_FOUND: // tell the process to kill itself
+		    switch(status.MPI_TAG){
+		    case TAG_PASSWORD: // one slave found the password
+			    MPI_Recv(&val_pw, 1, MPI_UNSIGNED_LONG_LONG, status.MPI_SOURCE, TAG_PASSWORD, inter, &status);
+			    printf("[MASTER] Slave [%d] has found the PASSWORD [%llu]!!! \n", status.MPI_SOURCE, val_pw);
+			    for(i=0; i<num_procs-1; i++){
+				    MPI_Send(0,0, MPI_INT, i, TAG_KILL_SELF, inter);
+			    }
+			    stopComm = 1; isFound = 1;
+			    break;
+			    
+		    case TAG_PWD_NOT_FOUND: // tell the process to kill itself
                             MPI_Recv(0,0,MPI_INT, status.MPI_SOURCE, TAG_PWD_NOT_FOUND,inter, &status);
                             printf("[MASTER]: slave[%d] FAILED !!!\n", status.MPI_SOURCE);
                             ++numProcsFailed;
@@ -161,13 +157,13 @@ int main(int argc, char** argv){
             int2str(val_pw, str_pw, alphabet, alphabet_len);
             printf("\n************************************************************ \n");
             printf("<<< \x1b[32mSUCCESS \x1b[0m>>> Password is [%s], found by slave [%d]\n", str_pw, status.MPI_SOURCE);
-            printf("************************************************************** \n");
+            printf("************************************************************ \n");
             free(str_pw);
     }
     else{
             printf("\n************************************************************ \n");
             printf("<<< \x1b[31m FAILED\x1b[0m >>> vAll process don't find the right password! Program quit!!!\n");
-            printf("************************************************************** \n");
+            printf("************************************************************ \n");
     }  
     
     free(alphabet);
