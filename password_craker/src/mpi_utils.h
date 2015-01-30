@@ -12,6 +12,7 @@
 #define TAG_KILL_SELF         3
 #define TAG_NO_MORE_INTERVAL  4
 #define TAG_PWD_NOT_FOUND     5
+#define TAG_CONFIRM_EXIT      6
 
 typedef struct {
     unsigned long long start;
