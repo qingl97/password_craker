@@ -100,7 +100,7 @@ void thread_comm(MPI_Comm inter){
                         case TAG_INTERVAL: // an interval arrived
 				send = 0;
                                 MPI_Recv(&task, 1, mpi_type_interval, 0, TAG_INTERVAL, inter, &status);
-                                fprintf(stderr, "[SLAVE %d] received interval [%llu - %llu] from Master\n", rank, task.start, task.start+task.num_perms-1);
+                                // fprintf(stderr, "[SLAVE %d] received interval [%llu - %llu] from Master\n", rank, task.start, task.start+task.num_perms-1);
 #pragma omp critical 
                                 {
                                         updateTaskList(&task);
@@ -133,7 +133,7 @@ void thread_comm(MPI_Comm inter){
                         else if(num_threads_finished == num_threads_slave){ // all threads didn't find the password
                                 if(send1 == 0){ // send only once
 					MPI_Send(0, 0, MPI_INT, 0, TAG_PWD_NOT_FOUND, inter);
-					fprintf(stderr, "[SLAVE %d]: NOT FOUND PWD, DONE!\n", rank);
+					// fprintf(stderr, "[SLAVE %d]: NOT FOUND PWD, DONE!\n", rank);
 					send1 = 1;
 			        } 
                         }
@@ -229,6 +229,6 @@ int main(int argc, char** argv){
 	MPI_Finalize();
 	free(alphabet);
 	clearTaskList();
-	fprintf(stderr, "[SLAVE %d]: TERMINATED, DONE \n", rank);
+	// fprintf(stderr, "[SLAVE %d]: TERMINATED, DONE \n", rank);
 	return EXIT_SUCCESS;
 }

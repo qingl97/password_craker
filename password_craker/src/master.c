@@ -107,7 +107,7 @@ int main(int argc, char** argv){
 			switch(status.MPI_TAG){
 			case TAG_PASSWORD: // one slave found the password
 				MPI_Recv(&val_pw, 1, MPI_UNSIGNED_LONG_LONG, status.MPI_SOURCE, TAG_PASSWORD, inter, &status);
-				printf("[MASTER] Slave [%d] has found the PASSWORD [%llu]!!! \n", status.MPI_SOURCE, val_pw);
+				// printf("[MASTER] Slave [%d] has found the PASSWORD [%llu]!!! \n", status.MPI_SOURCE, val_pw);
 				for(i=0; i<num_procs-1; i++){
 					MPI_Send(0,0, MPI_INT, i, TAG_KILL_SELF, inter);
 				}
@@ -123,12 +123,12 @@ int main(int argc, char** argv){
 
 			case TAG_PWD_NOT_FOUND: // tell the process to kill itself
 				MPI_Recv(0,0,MPI_INT, status.MPI_SOURCE, TAG_PWD_NOT_FOUND,inter, &status);
-				printf("[MASTER]: slave[%d] not found pwd, requesting terminate !!!\n", status.MPI_SOURCE);
+				// printf("[MASTER]: slave[%d] not found pwd, requesting terminate !!!\n", status.MPI_SOURCE);
 				MPI_Send(0,0, MPI_INT, status.MPI_SOURCE, TAG_KILL_SELF, inter);
 				break;
                             
 			case TAG_INTERVAL_REQUEST:
-				printf("[MASTER]: slave [%d] is requesting interval \n", status.MPI_SOURCE);
+				// printf("[MASTER]: slave [%d] is requesting interval \n", status.MPI_SOURCE);
 				MPI_Recv(0,0,MPI_INT, status.MPI_SOURCE, TAG_INTERVAL_REQUEST,inter,  &status);
 				if(moreInterval){
 					Interval task;
@@ -144,10 +144,10 @@ int main(int argc, char** argv){
 						start = start + INTERVAL_LENGTH;
 					}
 					MPI_Send(&task, 1, mpi_type_interval, status.MPI_SOURCE, TAG_INTERVAL, inter);
-					printf("[MASTER]: Send interval [%llu - %llu] to slave [%d]\n", task.start, task.start+task.num_perms-1, status.MPI_SOURCE);
+					// printf("[MASTER]: Send interval [%llu - %llu] to slave [%d]\n", task.start, task.start+task.num_perms-1, status.MPI_SOURCE);
 				}
 				else{
-					printf("[MASTER]: Respond to slave[%d] NO_MORE_INTERVAL\n", status.MPI_SOURCE);
+					// printf("[MASTER]: Respond to slave[%d] NO_MORE_INTERVAL\n", status.MPI_SOURCE);
 					MPI_Send(0, 0, MPI_INT, status.MPI_SOURCE, TAG_NO_MORE_INTERVAL, inter);
 				}
 				break;
@@ -174,6 +174,6 @@ int main(int argc, char** argv){
     
 	free(alphabet);
 	MPI_Finalize();
-	printf("[MASTER]: exit program\n");
+	// printf("[MASTER]: exit program\n");
 	return EXIT_SUCCESS;
 }
