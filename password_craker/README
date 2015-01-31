@@ -1,8 +1,10 @@
 1. Pour compiler le programme, il faut se placer dans ce repertoire puis lancer:
+     
      $ make compile
 
 2. Pour tester le programme après la compilation, un exemple de configuration est fourni 
 dans le Makefie puis lancer:
+     
      $ make test
 
 3. La configuration de lancement de programme:
